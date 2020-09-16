@@ -1,0 +1,322 @@
+---
+title: "Creative Assignment 1"
+author: "Marissa Getts"
+date: "9/15/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(tidycensus)
+library(tidyverse)
+library(ggplot2)
+library(gganimate)
+library(gapminder)
+```
+
+
+<b>Loading Data</b><br>
+After struggling through matching variables with the tutorials (and weirdly refusing to use the filter tool on my own data), I gave up and chose to use Prof Voulgaris' data! I also tried for entirely too long to add the American Indian and Alaska Native code to the dataset, to no avail. Will be using office hours to see what I was doing wrong. 
+
+
+```{r load data}
+vars <- c(tot_hh = "H001001",
+         tot_rural_hh = "H002005",
+         tot_rent_hh = "H004004",
+         avg_hh_size = "H012001",
+         tot_pop = "P003001",
+         nh_white_pop = "P005003",
+         nh_black_pop = "P005004",
+         nh_asian_pop = "P005006",
+         hispanic_pop = "P005010",
+         med_age = "P013001")
+
+SD_tracts <- get_decennial(geography = "tract", variables = vars,
+                           state = "UT", county = "Salt Lake",
+                           output = "wide") %>%
+ mutate(rural = (tot_rural_hh == tot_hh),
+         pct_rental = tot_rent_hh / tot_hh,
+         majority_race_eth = case_when(
+           nh_white_pop / tot_pop > 0.5 ~ "nh_white",
+           nh_black_pop / tot_pop > 0.5 ~ "nh_black",
+           nh_asian_pop / tot_pop > 0.5 ~ "nh_asian",
+           hispanic_pop / tot_pop > 0.5 ~ "hispanic",
+           (nh_white_pop + nh_black_pop + nh_asian_pop + hispanic_pop) /
+             tot_pop < 0.5 ~ "other",
+           TRUE ~ "None")) %>%
+  filter(tot_pop > 0, tot_hh > 0) %>%
+
+ select(GEOID, rural, majority_race_eth, 
+      pct_rental, avg_hh_size, tot_pop, med_age) 
+```
+
+<b>First Vis: Scatterplot of Everything All Together</b><br>
+Following along with the tutorials, I combined sort of...all of the combinable data into one figure! I removed the shape addition because my area of analysis is a completely urban area, making that information fairly useless.  I like the way you can see the scope of the population showing with the different dot sizes - I think that it (somewhat) communicates the rates of home ownership/renting in an interesting way. 
+
+```{r scatter plot 1}
+ggplot(SD_tracts, 
+       aes(x = pct_rental,
+           y = med_age,
+           size = tot_pop,
+           color = majority_race_eth)) +
+  geom_point() +
+  scale_size_continuous(name = "Tract population") +
+  scale_x_continuous(name = "Percent renters",
+                     breaks = seq(0, 1, by = 0.1),
+                     labels = paste(seq(0, 100, by = 10), "%", sep = "")) +
+  scale_y_continuous(name = "Median age within tract",
+                     breaks = seq(10, 80, by = 10)) +
+  scale_color_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic Black", 
+                                  "No Majority")) +
+  theme_light() +
+  theme(legend.key.size = unit(0.1, "cm"))
+```
+
+<b>Second Vis: Same Scatterplot Sans Size Element</b><br>
+Although I liked the size dimension of the above graph, it did muddle the groups together so you can't fully compare or understand the placement of all the census tracts. For some of my first tries, I wanted to remove another element to see how it might improve legibility. I think this ultimately communicates the *main* point of the figure much better than the above option with just a small change in code. 
+
+```{r scatter plot 2}
+ggplot(SD_tracts, 
+       aes(x = pct_rental, 
+           y = med_age,
+           color = majority_race_eth)) +
+  geom_point()+
+    scale_size_continuous(name = "Tract population") +
+  scale_x_continuous(name = "Percent renters",
+                     breaks = seq(0, 1, by = 0.1),
+                     labels = paste(seq(0, 100, by = 10), "%", sep = "")) +
+  scale_y_continuous(name = "Median age within tract",
+                     breaks = seq(10, 80, by = 10)) +
+  scale_color_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic Black", 
+                                  "No Majority")) +
+  labs(subtitle="Age & Renting", 
+       y="People Per Household", 
+       x="percent of tract residents who rent their place of residence", 
+       title="Scatterplot", 
+       caption = "Source: tidycensus")
+```
+<b>Third Vis: Yet Another Scatterplot</b><br>
+I wanted to test out some different elements with the same type of graph (okay, I genuinely love scatter plots and spent entirely too much time trying to figure out color gradients for them. Expect big things next assignment when I have internet and electricity the whole time). For better legibility I didn't start the axis from 0. I would have loved to change the size of all the shapes to be just a bit bigger - they are too small to really tell the difference from the color gradient. 
+
+```{r scatter plot 3}
+ggplot(SD_tracts, 
+       aes(x = avg_hh_size, 
+           y = med_age,
+           color = tot_pop,
+           shape = majority_race_eth)) + 
+  geom_point()+
+  xlim(c(1, 5)) + 
+  ylim(c(10, 60)) + 
+  labs(subtitle="Median Age & Household Size", 
+       y="Median Age of Census Tract", 
+       x="Average household size (people)", 
+       color="population of census tract",
+       title="Scatterplot", 
+       caption = "Source: tidycensus") +
+scale_shape(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic Black", 
+                                  "No Majority"))
+```
+<b>Fourth Vis: A Sweet, Sweet Density Plot</b><br>
+
+I really love this visualization because I think it is a little more exciting and nuanced than a linear histogram, and the overlap, rather than the side by side comparison, feels really useful! I think it tells an interesting story of the majority white census tracts being way more likely to own homes than census tracts that are majority Hispanic or more diverse than a simple white majority. I'm not sure how you wanted us to label things, but I've been playing around with the wording a bit because, sans context, it feels like the more detailed the labels the clearer the figure. 
+
+```{r density plot}
+ggplot(SD_tracts, aes(pct_rental)) +
+geom_density(aes(fill=factor(majority_race_eth)), alpha=0.6) + 
+    labs(subtitle="renting by majority racial group in census tract",
+         caption="Source: tidycensus",
+         x="percent of tract residents who rent") +
+         scale_fill_discrete(name = "Majority Race/Ethnicity",
+                     labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "No majority"))
+        
+```
+
+
+<b>Fifth Viz: I Really Hate This Violin Plot</b><br>
+
+```{r violin plot}
+ggplot(SD_tracts, aes(pct_rental, med_age)) +
+ geom_violin() + 
+  labs(title="Violin plot", 
+       subtitle="income by people in household",
+       caption="Source: tidycensus",
+       x="income in USD",
+       y="number of people in household")
+```
+I hated that one so much because I executed it poorly, so here is a better one that is pretty much almost exactly what the tutorial told us to do. The comparison feels a million (no exaggeration) times better than the stingray-looking figure above. 
+
+
+```{r prettier violin plot}
+ggplot(SD_tracts, 
+       aes(x = majority_race_eth,
+           y = med_age,
+           color = majority_race_eth)) +
+  geom_violin() +
+  labs(title) +
+  scale_x_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic white",
+                                  "No majority")) +
+  scale_y_continuous(name = "Median age within census tract",
+                     breaks = seq(10, 80, by = 10)) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+<b>Sixth Vis: A Classic</b><br>
+
+I'm not sure if we're allowed to like pie charts here because I know so many statisticians hate them, but here we are! For some reason this was the most confusing one for me to understand while making it, and I don't feel very confident about my full interpretation of it. 
+
+
+```{r pie chart}
+ggplot(SD_tracts, aes(x = "", y = "pct_rental", fill = factor(majority_race_eth))) + 
+  geom_bar(width = 1, length = 1, stat = "identity") +
+  theme(axis.line = element_blank(), 
+        plot.title = element_text(hjust=0.5)) + 
+  labs(fill="", 
+       x=NULL, 
+       y=NULL, 
+       title="% of total renters in SLC County, UT", 
+       caption="Source: tidycensus") +
+coord_polar(theta = "y", start=0) +
+scale_fill_discrete (name = "Majority Race/Ethnicity",
+                     labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "No majority"))
+```
+
+
+<b>nterruption</b><br>
+ I wanted to load some of my own data (as compiled in our previous quant assignment), so I loaded it to be able to play with a vew different variables I was a little more excited about! Hope that's okay! 
+ 
+```{r load household level data, results="hide", message=FALSE}
+hh_data <- get_pums(variables = c("RACAIAN", 
+                                  "ACCESS",
+                                  "LAPTOP",
+                                  "TABLET",
+                                  "COMPOTHX",
+                                  "SMARTPHONE",
+                                  "BROADBND",
+                                  "HUPAC",
+                                  "HINCP", 
+                                  "BDSP",
+                                  "NP",
+                                  "NOC",
+                                  "NRC"),
+                        state = "UT",
+                        year = 2018, 
+                        survey = "acs1",
+                        recode = TRUE) %>%
+filter(RACAIAN > 0)
+```
+<b>Sixth point five vis: a little extra one </b><br>
+
+Added this one just for fun, but realized it was slightly less useful for comparison than the one above because I removed households from every other group besides American Indian and Alaska Native people. 
+
+```{r one variable density plot}
+ggplot(hh_data, aes(x = HINCP)) +
+geom_density(fill = "yellow", alpha=0.5) + 
+    labs(title="Density plot:", 
+         subtitle="Income of Native American/Native Alaskans in Utah",
+         caption="Source: tidycensus",
+         x="annual income in USD",
+         fill="AIAN")
+```
+<b>Seventh Visualization: An Oldie but a Goodie</b><br>
+
+I wanted to check out the household sizes of American Indian and Native Alaskan households in Utah. A bar chart seemed like a great way to do that. 
+
+```{r}
+g <- ggplot(hh_data, aes(NP, 1))
+g + geom_bar(stat="identity", width = 0.5, fill="tomato2") + 
+      labs(subtitle="Household Sizes of American Indian and Native Alaskan Households in Utah", 
+           caption="Source: tidycensus",
+           x="Number of People",
+           y="Frequency") +
+      theme(axis.text.x = element_text(angle=65, vjust=0.6))
+
+```
+<b>Eight Visualization: Good Idea but Poorly Executed</b><br>
+
+I am noting here that I need to know how to change the scale for the household income per year, but I did not give myself the full time to figure that out. I really like this heat map, but I think it may be better for more complex categorical variables combined with more variable continuous data. Also - my spacing is bad/wrong and I'm going to dig into how to fix that for future assignments. 
+
+```{r}
+ggplot(hh_data, aes(x = ACCESS, y = LAPTOP, fill = HINCP)) +
+       geom_tile() +
+      scale_x_discrete(name = "Household Internet Access",
+                       labels = c("No data",
+                                  "No",
+                                  "Yes")) +
+      scale_y_discrete(name = "Number of People per Household",
+                       labels = c("Laptop or desktop",
+                                  "No computer",
+                                  "No data")) +
+      scale_fill_distiller(palette = "RdPu") +
+      labs(fill = "Household Income per year") + 
+      theme_minimal()
+```
+<b>Ninth & Tenth Vis: We Love Combos</b><br>
+
+I really loved seeing the data displayed separately then together to understand how the scatter plots and violin plots could work together. The scatter + the lines were so useful in showing a shared story of the patterns in the data. I hope to get to use this combo in the future! 
+
+```{r, include=FALSE}
+ggplot(SD_tracts, 
+       aes(x = majority_race_eth,
+           y = med_age,
+           color = majority_race_eth)) +
+  geom_point(position = "jitter",
+             size = 0.5,
+             alpha = 0.5) +
+  scale_x_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "No majority")) +
+  scale_y_continuous(name = "Median age within tract",
+                     breaks = seq(10, 80, by = 10)) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+<b>Eleventh Vis: A box plot (in the eleventh hour)</b><br>
+
+I wanted to throw one last visualization in before I turned my assignment in, so here is a box plot! 
+
+```{r box plot}
+ggplot(SD_tracts, aes(pct_rental))+
+  geom_boxplot(aes(fill=majority_race_eth)) +
+  theme(axis.text.x = element_text(angle=65, vjust=0.6)) + 
+  labs(subtitle="Percent Rental by Majority Race in Census Tract",
+       caption="Source: tidycensus",
+       x="percent renting in census tract",
+       y="")
+scale_fill_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Asian",
+                                  "No majority"))
+```
+
+
+
