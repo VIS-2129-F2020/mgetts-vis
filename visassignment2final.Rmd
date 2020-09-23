@@ -1,0 +1,185 @@
+---
+title: "viz assignment 2: projections & distortions"
+author: "marissa getts"
+date: "9/21/2020"
+output: html_document
+---
+
+### <b> prep code </b>
+
+
+```{r load libraries, include=FALSE}
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(tidyverse)
+library(ggspatial)
+library(cartogram)
+library(ggthemes)
+library(rgeos)
+library(ggthemr)
+```
+
+After I loaded all my libraries, I  created my first map. First, I loaded the data for the world. I skipped the process of mapping the whole world and instead created the africacountries group for Africa so I can directly map my continent of interest from the beginning! 
+
+```{r creating and visualizing Africa map}
+africacountries <- ne_countries(continent = "Africa", 
+                       returnclass = "sf") 
+africa_map <- ggplot(africacountries) +
+  geom_sf() +
+  theme_bw()
+africa_map
+```
+
+### <b>projection 1: azimuthal equidistant </b><br>
+The following projection is an  projection. It doesn't look *much* different, so I ran another map that shows what the project looks like if it is centered on Maine. 
+
+```{r}
+africazi <- st_transform(africacountries, "+proj=aeqd +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+africazimap <- ggplot(africazi) +
+   geom_sf() +
+  theme_bw()
+africazimap
+```
+<br>Here is the same map if it was centered on Maine (done by changing the latitude and longitude values in the code). I learned about this projection and the following two projections from https://mgimond.github.io/Spatial/coordinate-systems-in-r.html, who I also cite later when I needed a better projection for Africa. 
+```{r}
+africamaine <- st_transform(africacountries, "+proj=aeqd +lat_0=44.5 +lon_0=-69.8 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+africamainemap <- ggplot(africamaine) +
+   geom_sf() +
+  theme_bw()
+africamainemap
+```
+
+
+### <b>projection 2: sinusoidal </b>
+
+This particular projection isn't that different than how one might normally look at Africa, but I'll keep it because we'll use a sinusoidal projection focused on Africa to better visualize the other maps. 
+```{r}
+africasin <- st_transform(africacountries,"+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+africasinmap <- ggplot(africasin) +
+  geom_sf()
+theme_bw
+
+africasinmap
+  
+```
+
+### <b>projection 3: alaska albers equal area</b>
+
+For some reason this chunk will only visualize when I knit the whole document (the code chunk won't even run outside of that), but it is pretty wonky! Definitely not that useful for visualizing the continent of Africa. 
+
+```{r}
+africalaska <- st_transform(africacountries, "+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+
+africalaskamap <- ggplot(africalaska) + 
+  geom_sf()
+theme_dark()
+  
+  africalaskamap
+```
+
+### <b>projection 4: mollweide on greenwich </b>
+
+Although this one doesn't look wildly different - it does make the continent look much thinner than it appears in most other map projections. 
+
+```{r}
+africamoll <- st_transform(africacountries, "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs")
+
+africamollmap <- ggplot(africamoll) + 
+  geom_sf()
+
+africamollmap
+
+```
+
+
+
+### <b>vis 1: chloropleth map</b>
+Here we will start with a basic varied fill (used the gradient function FINALLY) based on population estimates for each country in 2015. I wanted to have three different colors instead of two, so I added the mid color and midpoint. I think the similar color spectrum communicates the population a bit better than really varied colors, particularly because it is a continuous variable. In this and the next similarly colored graphs, I really had to play around with the breaks and legend labels to make it as readable as possible. 
+
+```{r}
+ggplot(africacountries, aes(fill = pop_est)) +
+  geom_sf(color = "white") +
+  scale_fill_gradient2(low = "yellow", mid = "forest green", high = "dark green", midpoint = 72000000, 
+  name = "Pop Estimate 2015",
+  breaks = seq(5000000, 150000000, by = 20000000),
+    labels = formatC(seq(5000000, 150000000, by = 20000000), 
+                     big.mark = ",", format = "f", digits = 0)) +
+  theme_bw() +
+  theme(legend.background = element_blank())
+```
+In order for the following cartograms to be turned in the way our brain & eyes are used to, I had to transform the data to a different projection. It worked great for the next two cartograms! I got help with this specific code for a world sinusoidal projection from https://mgimond.github.io/Spatial/coordinate-systems-in-r.html
+
+```{r}
+africa_transformed1 <- st_transform(africacountries,"+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+```
+
+### <b>vis 2: continuous cartogram</b>
+I was then able to use similar visual coding to create a continuous cartogram! Luckily the same projection & breaks from before worked for this visualization. I think the color/size combo really emphasizes some of the differences in ways that the colors themselves cannot do. 
+
+```{r}
+africa_cartogram <- africa_transformed1 %>%
+  cartogram_cont("pop_est")
+
+ggplot(africa_cartogram, aes(fill = pop_est)) +
+  geom_sf(color = NA) +
+  scale_fill_gradient2(low = "yellow", mid = "forest green", high = "dark green", midpoint = 72000000, 
+    name = "Pop Estimate",
+  breaks = seq(5000000, 150000000, by = 20000000),
+    labels = formatC(seq(5000000, 150000000, by = 20000000), 
+                       big.mark = ",", format = "f", digits = 0)) +
+  theme_bw() +
+  theme(legend.background = element_blank())
+```
+
+### <b>vis 3: non-continuous cartogram</b>
+I don't know why but I was the most excited to run this code. The little countries? So cute. I don't think this map does a great job of visualizing the population estimates - the countries end up so far away from each other that there really isn't an adequate comparison. Plus so many of them are such similar size that you wouldn't know quite how much they differed in terms of space normally. 
+
+```{r}
+africa_cartogram_ncont <- africa_transformed1 %>%
+  cartogram_ncont("pop_est")
+
+ggplot(africa_cartogram_ncont, aes(fill = pop_est)) +
+  geom_sf(color = NA) +
+  scale_fill_gradient2(low = "yellow", mid = "forest green", high = "dark green", midpoint = 72000000, 
+    name = "Pop Estimate",
+  breaks = seq(5000000, 150000000, by = 20000000),
+    labels = formatC(seq(5000000, 150000000, by = 20000000), 
+                       big.mark = ",", format = "f", digits = 0)) +
+  theme_bw() +
+  theme(legend.background = element_blank())
+```
+
+Using the previous projection kept coming up with errors - so I was able to get this different projection from Whytne and it worked. To be honest I'm not sure why this one worked and the other didn't, but at least I sorted through that error code! I didn't want to get rid of the last projection in case this one didn't work for the previous cartograms, so I created a new one - africa_transformed2. I got this particular one from Whytne because her project is also using the continent of Africa. 
+
+```{r}
+Africa_Lambert_Conformal_Conic <- "+proj=lcc +lat_1=20 +lat_2=-23 +lat_0=0 +lon_0=25 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+
+africa_transformed2 <- africacountries %>%
+  st_transform(crs = Africa_Lambert_Conformal_Conic)
+```
+
+### <b>vis 4: proportional symbol map</b> 
+I think that this map was perhaps the clearest of all of the maps. The placement of the circles in the space of the country was useful for identifying where they belonged, but the different circle sizes were much easier to compare than the already not comparable country shapes and sizes. I had to play around with the breaks and labels to find something that really worked for this map and I feel pretty successful with the scale I found, even if it was a little strange. 
+
+```{r}
+africa_centroids <- africa_transformed2 %>%
+  st_centroid()
+
+ggplot(africa_transformed2) +
+  geom_sf(fill = NA, color = "light blue") +
+  geom_sf(data = africa_centroids, 
+            aes(size = pop_est),
+            alpha = 0.5, color = "dark blue") +
+  scale_size_continuous(name = "Population est in\nAfrican Countries 2015",
+      breaks = seq(1000000, 100000000, by = 11000000),
+      labels = formatC(seq(1000000, 100000000, by = 11000000), 
+                       big.mark = ",", format = "f", digits = 0),
+      range = c(0, 17)) +
+  theme_bw() 
+```
+
+
+
