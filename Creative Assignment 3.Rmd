@@ -1,0 +1,313 @@
+---
+title: 'week 4: pts and polygons'
+author: "Marissa Getts"
+date: "9/29/2020"
+output: html_document
+---
+```{r}
+library(sf)
+library(tidyverse)
+library(ggthemes)
+library(ggspatial)
+library(units)
+library(maps)
+library(nngeo)
+```
+I grabbed four maps/layers: <br>
+<u>ccouncils</u> - this is the equivalent of Salt Lake City's neighborhood classification. Officially called "community councils. <br>
+<u>parks</u> - this is as easy at it sounds. parks in Salt Lake City. <br>
+<u>historic</u> - this is a layer with points of historic sites across Salt Lake City. I feel like I've been to all of them, although that's definitely not true. <br>
+<u>worship</u> - this is a layer showing places of worship, including what religion/denomination they belong to. the data set itself references wards and temples, though, so I already feel like it is going to be fairly biased towards counting the Church of Jesus Christ of Latter Day Saints. <br>
+
+
+```{r}
+ccouncils <- st_read("https://gis-slcgov.opendata.arcgis.com/datasets/8a6d4c855ac64dc9a0462b9b1f49bedf_4.kml", 
+                  quiet = TRUE) 
+
+parks <- st_read("https://gis-slcgov.opendata.arcgis.com/datasets/04ea8234f39b4d6fac7c1a242d7bbd19_19.kml", 
+                 quiet = TRUE)
+
+historic <- st_read("https://gis-slcgov.opendata.arcgis.com/datasets/67ae2a7099e64c6d99cb1f4bb2671850_15.kml", 
+                   quiet = TRUE) 
+
+worship <- st_read("Utah_Places_Of_Worship5.kml") 
+
+```
+
+
+```{r}
+UTplane <- "+proj=lcc +lat_1=40.71666666666667 +lat_2=41.78333333333333 +lat_0=40.33333333333334 +lon_0=-111.5 +x_0=500000 +y_0=1000000 +ellps=GRS80 +units=m no_defs"
+
+ccouncils <- ccouncils %>%
+  st_transform(UTplane)
+
+parks <- parks %>%
+  st_transform(UTplane)
+
+historic <- historic %>%
+  st_transform(UTplane)
+
+worship <- worship %>%
+  st_transform(UTplane)
+```
+
+Here is my extremely wonky file that has all of the layers on top of each other! Relationships by space ONLY.
+
+```{r}
+ggplot(ccouncils) +
+  geom_sf(fill = NA, color = "light grey") +
+  geom_sf(data = parks, fill = "green", color = NA) +
+  geom_sf(data = historic, color = "dark grey", size = 0.02) +
+  geom_sf(data = worship, color = "magenta", size = 0.02) +
+  theme_map() +
+  annotation_scale()
+```
+<br>I decided to create a buffer based on if any historic sites were within an SLC block (~ 200m). 
+
+```{r}
+worship_buffer <- st_buffer(worship, dist = 200) %>%
+  st_union()
+
+ggplot(worship_buffer) +
+  geom_sf() +
+  theme_map()
+```
+<br>It looks like many of the historic sites in downtown SLC are all close together - the blob area is likely Temple Square. 
+```{r}
+worship_historic <- historic[worship_buffer,]
+  
+ggplot(worship_buffer) +
+  geom_sf() +
+  geom_sf(data = worship_historic, 
+          color = "darkgreen", 
+          size = 0.03) +
+  theme_map()
+```
+```{r}
+historic <- historic %>%
+  st_join(worship_historic) %>%
+  mutate(by_worship = !is.na(Name.y))
+```
+
+```{r}
+n_historicworship <- sum(historic$by_worship)
+
+n_historicworship
+```
+```{r}
+n_historic <- length(historic$by_worship)
+
+pct_historicworship <- n_historicworship / n_historic
+
+pct_historicworship
+```
+```{r}
+left_side  <- st_bbox(historic)$xmin
+top_side <- st_bbox(historic)$ymax
+
+ggplot(ccouncils) +
+  geom_sf(fill = "white", color = "darkgrey") +
+  geom_sf(data = historic, size = 0.015,
+          aes(color = by_worship)) +
+  scale_color_manual(values = c("magenta", "darkgreen"),
+          name = "Historic sites by distance\n to a place of worship", 
+          labels = c("No place of worship within 200m",
+                     "place of worship within 200m")) +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr",
+                         style = north_arrow_minimal()) +
+  annotate(geom = "text", x = left_side, 
+           y = top_side, 
+           label = paste("Of the ", 
+                         prettyNum(n_historic, big.mark = ","),
+                         " historic sites in SLC\n", 
+                         prettyNum(n_historicworship, big.mark = ","),
+                         " (", 
+                         prettyNum(100*pct_historicworship, digits = 0),
+                         "%) are within 200\nmeters of a place of worship.",
+                         sep = ""),
+           hjust = 0, vjust = 0, size = 3) +
+  theme_map() +
+  theme(panel.background = element_rect(fill = "cornsilk1"),
+        legend.background = element_rect(fill = alpha("white", 0.5), 
+                                         color = "gray"))
+```
+
+```{r, include=FALSE}
+library(viridis)
+library(viridisLite)
+```
+
+<br>This map tells us how many places of worship there are in each of the community council areas. Kind of funny that as soon as you start getting into the more suburban parts of SLC (southeast corner), there are way more churches than in the more downtown, industrial, and university areas. <Br>
+```{r}
+ccouncils <- ccouncils %>%
+  mutate(num_worship = lengths(st_covers(ccouncils, worship)))
+
+ggplot(ccouncils) +
+  geom_sf(color = NA, 
+          aes(fill = num_worship)) +
+  scale_fill_viridis_c(name = "CCs by number of\nplaces of worship",
+                       breaks = breaks <- seq(0, 150, by = 15),
+                       labels = paste(prettyNum(breaks, big.mark = ","))) +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tl",
+                         style = north_arrow_minimal()) +
+theme_map() +
+  theme(legend.background = element_rect(fill = alpha("white", 1), 
+                                         color = "gray")) +
+  scale_fill_viridis(option="plasma")
+  
+```
+<br>This map will show us the density of places of worship (per km^2) across different community council designated areas. This gives us a different picture for some of the other more residential areas of Salt Lake City and how those places differ from downtown. 
+
+```{r}
+ccouncils <- ccouncils %>%
+  mutate(area = set_units(st_area(ccouncils), km^2)) %>%
+  mutate(worship_dens = as.numeric(num_worship / area))
+
+ggplot(ccouncils) +
+  geom_sf(color = NA, 
+          aes(fill = worship_dens)) +
+    scale_fill_viridis_c(name = 
+                           "SLC CCs by\nplace of worship density",
+                       breaks = breaks <- seq(0, 100, by = 25),
+                       labels = paste(prettyNum(breaks, big.mark = ","),
+                                      "places of worship per square km")) +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr",
+                         style = north_arrow_minimal()) +
+theme_map() +
+  theme(legend.position = "right",
+    legend.background = element_rect(fill = alpha("white", 0.5), 
+                                         color = "gray")) + 
+   scale_fill_viridis(option="plasma")
+```
+
+
+<br>
+This next map will show us how far SLC parks are from places of worship. Turns out they are all quite close. 
+
+```{r}
+parks <- parks %>%
+  mutate(worship_dist = st_nn(parks, worship, 
+                           returnDist = TRUE)$dist) %>%
+  mutate(worship_dist = as.numeric(worship_dist))
+```
+
+```{r}
+avg_park_dist <- mean(parks$worship_dist)
+
+avg_park_dist
+
+park_dist <- parks$worship_dist
+
+park_dist
+```
+```{r}
+right_side <- st_bbox(parks)$xmax
+left_side  <- st_bbox(parks)$xmin
+top_side <- st_bbox(parks)$ymax
+bottom_side <- st_bbox(parks)$ymin
+
+ggplot(ccouncils) +
+  geom_sf(fill = NA, color = "darkgrey") +
+  geom_sf(data = parks, size = 0.1,
+          aes(fill = worship_dist, labels = ))+
+  coord_sf(xlim = c(left_side - 2000, right_side - 2000), 
+           ylim = c(bottom_side - 2000, top_side - 2000), expand = FALSE) +
+  scale_color_viridis_c(name = 
+                          "SLC parks\nby distance to a place of worship",
+                        breaks = breaks <- seq(0, 300, by = 75)) +
+  scale_x_continuous() +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr",
+                         style = north_arrow_minimal()) +
+  annotate(geom = "text", x = right_side - 8500, 
+           y = bottom_side + 2000, 
+           label = paste("On average, an SLC park\nis ", 
+                         prettyNum(avg_park_dist, digits = 3),
+                         " meters from a place of worship.",
+                         sep = ""),
+           hjust = 0, vjust = 0, size = 3) +
+  theme_map() +
+  theme(panel.background = element_rect(fill = "white"),
+        legend.background = element_rect(fill = alpha("white", 0.5), 
+                                         color = "gray")) + 
+ scale_fill_viridis(option="plasma")
+
+```
+<br><b>Another Buffer Map</b>
+```{r}
+hist_buffer <- st_buffer(historic, dist = 200) %>%
+  st_union()
+
+hist_parks <- parks[hist_buffer,]
+  
+ggplot(hist_parks) +
+  geom_sf() +
+  geom_sf(data = hist_parks, 
+          color = "darkgreen", 
+          size = 0.01) +
+  theme_map()
+```
+
+```{r}
+historic <- historic %>%
+  st_join(hist_parks) %>%
+  mutate(by_parks = !is.na(Name.y))
+```
+
+```{r}
+n_park_hist <- sum(historic$by_parks)
+
+n_park_hist
+```
+
+```{r}
+n_hist <- length(historic$by_parks)
+
+pct_parkshist <- n_park_hist / n_hist
+
+pct_parkshist
+```
+
+<br>This map shows which historic SLC sites are within a block (200m) of a park or not. 
+
+```{r}
+right_side <- st_bbox(parks)$xmax
+left_side  <- st_bbox(parks)$xmin
+top_side <- st_bbox(parks)$ymax
+bottom_side <- st_bbox(parks)$ymin
+
+ggplot(ccouncils) +
+  geom_sf(fill = NA, color = "lightgrey") +
+  geom_sf(data = historic, size = 0.1,
+          aes(color = by_parks)) +
+ coord_sf(xlim = c(left_side - 1500, right_side - 1500), 
+           ylim = c(bottom_side - 1500, top_side - 1500), expand = FALSE)+
+  scale_color_manual(values = c("lightgreen", "darkgreen"),
+          name = "SLC historic sites\nby distance to a parking meter", 
+          labels = c("No park within 200 m",
+                     "Park within 200 m")) +
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr",
+                         style = north_arrow_minimal()) +
+  annotate(geom = "text", x = left_side + 12000, 
+           y = top_side - 8000, 
+           label = paste("Of the ", 
+                         prettyNum(n_hist, big.mark = ","),
+                         " historic sites in SLC\n", 
+                         prettyNum(n_park_hist, big.mark = ","),
+                         " (", 
+                         prettyNum(100*pct_parkshist, digits = 0),
+                         "%) are within 200\nmeters of a park.",
+                         sep = ""),
+           hjust = 0, vjust = 0, size = 3) +
+  theme_map() +
+  theme(panel.background = element_rect(fill = "white"),
+        legend.background = element_rect(fill = alpha("white", 0.5), 
+                                         color = "gray"))
+
+scale_fill_viridis(option="magma")
+```
+
